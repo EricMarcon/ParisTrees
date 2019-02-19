@@ -114,7 +114,7 @@ les_arbres@data %>%
   # Sélection des colonnes
   select(-typeemplacement, -geo_point_2d1, -geo_point_2d2, -complementadresse) %>% 
   # Filtrage des lignes
-  filter(str_detect(arrondissement, "^PARIS")) %>% 
+  dplyr::filter(str_detect(arrondissement, "^PARIS")) %>% 
   # Ajout d'une colonne Genre espèce
   mutate(spName=paste(genre, espece)) ->
   les_arbres_df
@@ -245,7 +245,7 @@ Les deux parcs les plus peuplés sont Les Buttes Chaumont et André Citröen ave
 
 ```{r, tidy=FALSE}
 Diversite %>% 
-  filter(Nombre > 2000) %>% 
+  dplyr::filter(Nombre > 2000) %>% 
   knitr::kable(caption="Parcs les plus peuplés", longtable = TRUE, booktabs = TRUE) %>%
   kableExtra::kable_styling(bootstrap_options = "striped", full_width = FALSE)
 ```
@@ -273,6 +273,17 @@ plot(Montceau_accum, q=0)
 plot(Montceau_accum, q=2)
 MapPlot(Montceau_accum, Order=0, NeighborHood=10)
 plot(Montceau, which.marks="PointWeight", col = "red", add=TRUE)
+```
+
+```{r}
+Cygnes <- wmppp_adresse("ALLEE DES CYGNES", reverse = TRUE)
+plot(Cygnes, which.marks="PointWeight")
+autoplot(as.AbdVector(Cygnes), Distribution = "lnorm")
+Cygnes_accum <- Mixing(Cygnes, q.seq=c(0,2), Individual=TRUE)
+plot(Cygnes_accum, q=0)
+plot(Cygnes_accum, q=2)
+MapPlot(Cygnes_accum, Order=0, NeighborHood=10)
+plot(Cygnes, which.marks="PointWeight", col = "red", add=TRUE)
 ```
 
 
