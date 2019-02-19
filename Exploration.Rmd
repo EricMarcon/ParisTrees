@@ -1,0 +1,229 @@
+---
+title: "Exploration des données"
+author: "Eric Marcon"
+date: "15 février 2019"
+output: 
+  html_document:
+    theme: sandstone
+    toc: yes
+    toc_float: yes
+---
+
+```{r Options, echo=TRUE, message=FALSE}
+knitr::opts_chunk$set(cache=TRUE, echo = TRUE, tidy=TRUE, tidy.opts=list(blank=FALSE, width.cutoff=50), out.width='\\maxwidth')
+options(width=50)
+# Installation des packages si nécessaire et chargement
+CRANLibrary <- function(Packages) {
+  InstallAndLoad <- function(Package) {
+    if (!Package %in% installed.packages()[, 1]) {install.packages(Package, repos="https://cran.rstudio.com/")}
+    require(Package, character.only = TRUE)
+  }
+  invisible(sapply(Packages, InstallAndLoad))
+}
+# Packages sur GitHub
+GitHubLibrary <- function(Packages) {
+  InstallAndLoad <- function(Package) {
+    Package_split <- str_split(Package, "/", simplify = TRUE)
+    if (!Package_split[1, 2] %in% installed.packages()[, 1]) {remotes::install_github(Package)}
+    require(Package_split[1, 2], character.only = TRUE)
+  }
+  invisible(sapply(Packages, InstallAndLoad))
+}
+# Ajouter les packages nécessaires ici
+CRANLibrary(c("kableExtra", "rgdal", "tidyverse", "entropart"))
+GitHubLibrary("EricMarcon/SpatDiv")
+```
+
+# Importation
+
+Source des données: https://opendata.paris.fr/explore/dataset/les-arbres/export/
+
+Exportation du jeu de données entier au format GeoJSON dans `/data/les-arbres.les-arbres.geojson`.
+
+```{r}
+if (!file.exists("data/les-arbres.geojson"))
+  # Télécharger le fichier de données s'il n'existe pas (100 Mo)
+  download.file("https://opendata.paris.fr/explore/dataset/les-arbres/download/?format=geojson", destfile="data/les-arbres.geojson")
+```
+
+
+# Lecture des données
+
+Le fichier est lu par le package `rgdal`.
+
+```{r}
+library("rgdal")
+# Lecture du GeoJSon
+les_arbres <- readOGR("data/les-arbres.geojson","les-arbres", encoding = "UTF-8", use_iconv = TRUE)
+# Vérification de l'encodage correct des acccents
+levels(les_arbres@data$libellefrancais)
+# Projection en Lambert 93 pour les coordonnées métriques
+les_arbres_Lambert93 <- spTransform(les_arbres, CRS("+init=epsg:2154"))
+```
+
+# Choix des données
+
+## Domanialité
+
+```{r, tidy=FALSE}
+library("tidyverse")
+les_arbres@data %>% 
+  group_by(domanialite) %>% 
+  summarise(Nombre=length(domanialite)) %>% 
+  arrange(desc(Nombre))
+```
+
+Traduction des sigles:
+```{r, tidy=FALSE}
+data.frame(Sigle = c("DASCO", "DJS", "DFPE", "DAC", "DASES"), 
+           Signification = c("Ecoles", "Equipements sportifs", "Crèches", "Equipements culturels", "Action sociale")) %>% 
+  knitr::kable(caption="Domanialité", longtable = TRUE, booktabs = TRUE) %>%
+  kableExtra::kable_styling(bootstrap_options = "striped", full_width = FALSE)
+```
+
+Les arbres référencés sont les arbres d'alignement, ceux des jardins, des cimetières, des équipements municipaux (écoles, etc.), du périphérique.
+Les arbres des bois de Boulogne et Vincennes sont seulement ceux des équipements municipaux. 
+Les parcs non municipaux, comme le Jardin des Tuileries ou celui du Luxembourg, ne sont pas cartographiés.
+
+## Lieu
+
+```{r, tidy=FALSE}
+les_arbres@data %>% 
+  group_by(arrondissement) %>% 
+  summarise(Nombre=length(arrondissement)) %>% 
+  arrange(desc(Nombre))
+```
+
+On gardera donc les données de Paris intra-muros seulement (Arrondissement numéroté) pour éliminer les Bois et la banlieue.
+
+# Extraction
+
+```{r, tidy=FALSE}
+les_arbres@data %>%
+  # Ajout des colonnes de coordonnées
+  bind_cols(as.data.frame(les_arbres_Lambert93@coords)) %>% 
+  # Sélection des colonnes
+  select(-typeemplacement, -geo_point_2d1, -geo_point_2d2, -complementadresse) %>% 
+  # Filtrage des lignes
+  filter(str_detect(arrondissement, "^PARIS")) %>% 
+  # Ajout d'une colonne Genre espèce
+  mutate(spName=paste(genre, espece)) ->
+  les_arbres_df
+```
+
+# Espèces
+
+```{r, tidy=FALSE}
+library("entropart")
+les_arbres_df %>% 
+  group_by(spName) %>% 
+  summarise(Nombre=length(spName)) %>% 
+  arrange(desc(Nombre)) ->
+  AbdFreqCount
+```
+
+Espèces les plus fréquentes :
+```{r}
+AbdFreqCount
+```
+
+
+Fréquence des espèces :
+```{r, tidy=FALSE}
+AbdFreqCount %>% 
+  with(Nombre) %>% 
+  as.AbdVector %>% 
+  autoplot
+```
+
+
+# Diversité
+
+## Par domanialité
+
+```{r, tidy=FALSE}
+library("SpatDiv")
+les_arbres_df %>% 
+  group_by(domanialite, arrondissement, adresse) %>% 
+  summarise(Nombre = length(adresse), 
+            Richesse = Richness(spName, Correction="None"),
+            Shannon = Diversity(spName, q=1, Correction="None"),
+            Simpson = Diversity(spName, q=2, Correction="None")) %>% 
+  arrange(desc(Richesse)) ->
+  Diversite
+```
+
+Les alignements sont très peu divers, à l'exception de l'Allée des Cygnes qui est un arboretum.
+
+```{r, tidy=FALSE}
+# Diversite[Diversite$adresse=="ALLEE DES CYGNES", ]$domanialite <- "Jardin"
+Diversite %>% 
+  group_by(domanialite) %>% 
+  summarise(Nombre = n(),
+            Moyenne = mean(Richesse),
+            EcartType = sd(Richesse))
+Diversite %>% 
+  ggplot(aes(x=domanialite, y=Richesse)) + 
+  geom_boxplot() +
+  scale_y_continuous(trans = "log10")
+```
+
+# Diversité spatialement explicite
+
+Automatisation de la création des jeux de points.
+
+```{r, tidy=FALSE}
+library("dbmss")
+# Extraction d'un wmppp à partir d'une adresse
+wmppp_adresse <- function(address) {
+  # Préparation du dataframe
+  les_arbres_df %>% 
+    filter(adresse == address) %>%
+    mutate(X=coords.x1, Y=coords.x2, 
+           PointType=spName, PointWeight=circonferenceencm) ->
+    Points
+  # Fenêtre = polygone convexe autour des points (mieux qu'un rectangle)
+  Window <- convexhull.xy(Points$X, Points$Y)
+  # Création du jeu de points
+  Points %>% 
+    wmppp(window = Window, unitname = c("meter", "meters"))
+}
+```
+
+## Dans les parcs
+
+Les deux parcs les plus peuplés sont Les Buttes Chaumont et André Citröen avec un peu plus de 2000 arbres. 
+
+```{r, tidy=FALSE}
+Diversite %>% 
+  filter(Nombre > 2000) %>% 
+  knitr::kable(caption="Parcs les plus peuplés", longtable = TRUE, booktabs = TRUE) %>%
+  kableExtra::kable_styling(bootstrap_options = "striped", full_width = FALSE)
+```
+
+Le Parc des Buttes Chaumont contient énormément d'espèces mais beaucoup d'espèces rares.
+
+```{r}
+Buttes_Chaumont <- wmppp_adresse("PARC DES BUTTES CHAUMONT")
+plot(Buttes_Chaumont, which.marks="PointWeight")
+autoplot(as.AbdVector(Buttes_Chaumont), Distribution = "lnorm")
+Buttes_Chaumont_accum <- Mixing(Buttes_Chaumont, q.seq=c(0,2), Individual=TRUE)
+plot(Buttes_Chaumont_accum, q=0)
+plot(Buttes_Chaumont_accum, q=2)
+MapPlot(Buttes_Chaumont_accum, Order=0, NeighborHood=10)
+```
+
+Le Parc Montceau contient 20 espèces de plus mais est 5 fois plus divers à l'ordre 2.
+
+```{r}
+Montceau <- wmppp_adresse("PARC MONCEAU")
+plot(Montceau, which.marks="PointWeight")
+autoplot(as.AbdVector(Montceau), Distribution = "lnorm")
+Montceau_accum <- Mixing(Montceau, q.seq=c(0,2), Individual=TRUE)
+plot(Montceau_accum, q=0)
+plot(Montceau_accum, q=2)
+MapPlot(Montceau_accum, Order=0, NeighborHood=10)
+plot(Montceau, which.marks="PointWeight", col = "red", add=TRUE)
+```
+
+
