@@ -150,6 +150,7 @@ TSWLatexianTemp*
 # Extras
 .#Extra
 *.xlsx
+*.docx
 
 # Downloaded data
 /data/*.geojson

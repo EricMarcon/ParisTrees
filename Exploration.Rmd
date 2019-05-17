@@ -16,16 +16,16 @@ options(width=50)
 CRANLibrary <- function(Packages) {
   InstallAndLoad <- function(Package) {
     if (!Package %in% installed.packages()[, 1]) {install.packages(Package, repos="https://cran.rstudio.com/")}
-    require(Package, character.only = TRUE)
+    #require(Package, character.only = TRUE)
   }
   invisible(sapply(Packages, InstallAndLoad))
 }
 # Packages sur GitHub
 GitHubLibrary <- function(Packages) {
   InstallAndLoad <- function(Package) {
-    Package_split <- str_split(Package, "/", simplify = TRUE)
+    Package_split <- stringr::str_split(Package, "/", simplify = TRUE)
     if (!Package_split[1, 2] %in% installed.packages()[, 1]) {remotes::install_github(Package)}
-    require(Package_split[1, 2], character.only = TRUE)
+    #require(Package_split[1, 2], character.only = TRUE)
   }
   invisible(sapply(Packages, InstallAndLoad))
 }
@@ -41,11 +41,17 @@ GitHubLibrary("EricMarcon/SpatDiv")
 Source des données: https://opendata.paris.fr/explore/dataset/les-arbres/export/
 
 Copie du jeu de données entier au format GeoJSON dans `/data/les-arbres.les-arbres.geojson`.
+Idem pour le fond de carte des arrondissements de Paris.
 
 ```{r}
+# Arbres
 if (!file.exists("data/les-arbres.geojson"))
   # Télécharger le fichier de données s'il n'existe pas (100 Mo)
   download.file("https://opendata.paris.fr/explore/dataset/les-arbres/download/?format=geojson", destfile="data/les-arbres.geojson")
+
+# Arrondissements
+if (!file.exists("data/arrondissements.geojson"))
+  download.file("https://opendata.arcgis.com/datasets/8463ae61c7ba4388bf08189effcbf2f1_0.geojson", destfile="data/arrondissements.geojson")
 ```
 
 ## Lecture
@@ -56,15 +62,35 @@ Le fichier est lu par le package `rgdal`.
 library("rgdal")
 # Lecture du GeoJSon
 les_arbres <- readOGR("data/les-arbres.geojson","les-arbres", encoding = "UTF-8", use_iconv = TRUE)
-# Vérification de l'encodage correct des accents : "Amélanchier"
+# Vérification de l'encodage correct des accents : "Althéa"
 levels(les_arbres@data$libellefrancais)[6]
+```
+
+Lecture du fichier des arrondissements.
+
+```{r}
+arrondissements <- readOGR("data/arrondissements.geojson", "arrondissements", encoding = "UTF-8", use_iconv = TRUE)
+# Filtrage des 20 arrondissements sans les Bois
+arrondissements <- arrondissements[arrondissements@data$C_CAINSEE %/% 1000 == 75 & arrondissements@data$B_BOIS == "N" , ]
+# Arrondissement décrit par son numéro
+arrondissements@data$L_CAB <- str_replace(arrondissements@data$L_CAB, "er", "")
+arrondissements@data$L_CAB <- str_replace(arrondissements@data$L_CAB, "ème", "")
+library("sp")
+plot(arrondissements)
 ```
 
 ## Datum
 
 Projection des données dans le référentiel Lambert 93 pour avoir des coordonnées en mètres.
+
 ```{r}
-les_arbres_Lambert93 <- spTransform(les_arbres, CRS("+init=epsg:2154"))
+library(tidyverse)
+les_arbres %>% 
+  spTransform(CRS("+init=epsg:2154")) ->
+  les_arbres_Lambert93
+arrondissements %>% 
+  spTransform(CRS("+init=epsg:2154")) ->
+  arrondissements_Lambert93
 ```
 
 
@@ -113,10 +139,24 @@ les_arbres@data %>%
   bind_cols(as.data.frame(les_arbres_Lambert93@coords)) %>% 
   # Sélection des colonnes
   select(-typeemplacement, -geo_point_2d1, -geo_point_2d2, -complementadresse) %>% 
+  # Suppression des facteurs avant de manipuler les chaînes de caractères
+  mutate(arrondissement=as.character(arrondissement)) %>% 
+  mutate(adresse=as.character(adresse)) %>% 
   # Filtrage des lignes
   dplyr::filter(str_detect(arrondissement, "^PARIS")) %>% 
+  # Filtrage des lignes : élimination de DAC et DASES (trop marginal)
+  dplyr::filter(domanialite!="DAC") %>% 
+  dplyr::filter(domanialite!="DASES") %>% 
   # Ajout d'une colonne Genre espèce
-  mutate(spName=paste(genre, espece)) ->
+  mutate(spName=paste(genre, espece)) %>% 
+  # Arrondissement décrit par son numéro
+  mutate(arrondissement=str_replace(arrondissement, "PARIS ", "")) %>% 
+  mutate(arrondissement=str_replace(arrondissement, "E ARRDT", "")) %>% 
+  mutate(arrondissement=str_replace(arrondissement, "ER ARRDT", "")) %>% 
+  # Simplification des adresses pour rassembler les données des cimetières
+  mutate(adresse=str_trim(ifelse(str_detect(as.character(adresse), "^CIMETIERE "), str_split(as.character(adresse), "/", simplify=TRUE)[, 1], as.character(adresse)))) %>% 
+  # Adresse unique pour les espaces répartis sur plusieurs arrondissements et de plusieurs domanialités
+  mutate(adresse = paste(adresse, arrondissement, domanialite)) ->
   les_arbres_df
 ```
 
@@ -136,6 +176,8 @@ Espèces les plus fréquentes :
 AbdFreqCount
 ```
 
+Noms anglais : plane tree, horse chestnut, scholar tree, lime tree, Norway maple, sycamore maple, European nettle tree.
+
 Fréquence des espèces :
 ```{r, tidy=FALSE}
 AbdFreqCount %>% 
@@ -153,91 +195,181 @@ AbdFreqCount %>%
 library("SpatDiv")
 les_arbres_df %>% 
   group_by(domanialite, arrondissement, adresse) %>% 
-  summarise(Nombre = length(adresse), 
-            Richesse = Richness(spName, Correction="None"),
+  summarise(Nombre = n(), 
+            Richness = Richness(spName, Correction="None"),
             Shannon = Diversity(spName, q=1, Correction="None"),
             Simpson = Diversity(spName, q=2, Correction="None")) %>% 
-  arrange(desc(Richesse)) ->
+  arrange(desc(Richness)) ->
   Diversite
 ```
 
 Les alignements sont très peu divers, à l'exception de l'Allée des Cygnes qui est un arboretum.
 
 ```{r, tidy=FALSE}
-# Diversite[Diversite$adresse=="ALLEE DES CYGNES", ]$domanialite <- "Jardin"
+Diversite[Diversite$adresse=="ALLEE DES CYGNES 15", ]$domanialite <- "Jardin"
 Diversite %>% 
   group_by(domanialite) %>% 
   summarise(Nombre = n(),
-            Moyenne = mean(Richesse),
-            EcartType = sd(Richesse))
+            Moyenne = mean(Richness),
+            EcartType = sd(Richness))
 Diversite %>% 
-  ggplot(aes(x=domanialite, y=Richesse)) + 
+  ggplot(aes(x=domanialite, y=Richness)) + 
   geom_boxplot() +
   scale_y_continuous(trans = "log10")
 ```
 
-# Diversité spatialement explicite
+# Par arrondissement
 
-Automatisation de la création des jeux de points.
+Profils de diversité.
 
-```{r, tidy=FALSE}
-library("dbmss")
-# Extraction of a wmppp from an address
-wmppp_adresse <- function(address, alpha=100, reverse=FALSE) {
-  # Prepare the dataframe
-  les_arbres_df %>% 
-    filter(adresse == address) %>%
-    mutate(X=coords.x1, Y=coords.x2, 
-           PointType=spName, PointWeight=circonferenceencm) ->
-    Points
-  # Window = Convex hull
-  #Window <- convexhull.xy(Points$X, Points$Y)
-  # Window = alpha shape, i.e. concave hull
-  Points %>% 
-    select(x=X, y=Y) %>% 
-    # Package alphahull
-    alphahull::ashape(alpha=alpha) ->
-    AlphaShape
-  # Convert alpha shape into polygon (https://rpubs.com/geospacedman/alphasimple)
-  library("igraph")
-  # Make a graph with edges
-  AlphaShape_graph <- graph.edgelist(cbind(as.character(AlphaShape$edges[, "ind1"]), 
-                                           as.character(AlphaShape$edges[, "ind2"])), directed = FALSE)
-  # Tests: the graph must be connected and circular. If it is not, increase alpha.
-  if (!is.connected(AlphaShape_graph)) {
-    stop("Graph not connected")
-  }
-  if (any(degree(AlphaShape_graph) != 2)) {
-    stop("Graph not circular")
-  }
-  if (clusters(AlphaShape_graph)$no > 1) {
-    stop("Graph composed of more than one circle")
-  }
-  # Eliminate the first node to destroy circularity
-  Cut_graph <- AlphaShape_graph - E(AlphaShape_graph)[1]
-  # Find chain end points
-  ends <- names(which(degree(Cut_graph) == 1))
-  path <- get.shortest.paths(Cut_graph, ends[1], ends[2])[[1]]
-  # This is an index into the points
-  pathX <- as.numeric(V(Cut_graph)[unlist(path)]$name)
-  # Detach igraph to avoid name conflicts
-  detach("package:igraph", unload=TRUE)
-  # Join the ends to restore circularity
-  pathX = c(pathX, pathX[1])
-  # Get the points from the ashape object. 
-  if (reverse) {
-    # Reverse order to have the anticlockwise for spatstat.
-    Poly_summmits <- AlphaShape$x[rev(pathX), ]
-  } else {
-    Poly_summmits <- AlphaShape$x[pathX, ]
-  }
-  # Make an owin
-  Window <- owin(poly=list(x=Poly_summmits[, 1],y=Poly_summmits[, 2]))
-  # Create the point set
-  Points %>% 
-    wmppp(window = Window, unitname = c("meter", "meters"))
+```{r}
+ADiv <- data.frame(q=q.seq)
+ADiv <- matrix(0, nrow = length(q.seq), ncol=20)
+for(i in 1:20) {
+  les_arbres_df %>% dplyr::filter(arrondissement == i) %>% pull(spName) %>% as.AbdVector -> Abundance
+  ADiv[, i] <- CommunityProfile(Diversity, Abundance, q.seq, Correcton = "None")$y
 }
+data.frame(q=q.seq, ADiv) %>% reshape::melt(id=q) %>%  
+  ggplot + geom_line(aes(x = q, y = value, colour = variable))
 ```
+
+
+# Objets spatiaux
+
+Automatisation de la création des jeux de points et création des polygones spatiaux
+
+```{r, tidy=FALSE, message=FALSE}
+# Extraction of a wmppp from an address
+wmppp_adresse <- function(address, alpha=100) {
+  tryCatch({
+    # Prepare the dataframe
+    les_arbres_df %>% 
+      dplyr::filter(adresse == address) %>%
+      mutate(X=coords.x1, Y=coords.x2, 
+             PointType=spName, PointWeight=circonferenceencm) ->
+      Points
+    # At least 3 points
+    if (nrow(Points) < 3) return(NA)
+    
+    # Build a window around the points
+    if (nrow(Points) == 3) {
+      # Window is a convex hull
+      Window <- spatstat::convexhull.xy(Points$X, Points$Y)
+    } else {
+      # Window = alpha shape, i.e. concave hull
+      is_validated_alpha <- FALSE
+      # Use alphahull::ashape to obtain a concave hull. Parameter alpha must be small for accuracy (argument alpha) but large enough to be able to build a correct graph from the points: alpha is multiplied by 2 until success.
+      while (!is_validated_alpha){
+        Points %>% 
+          select(x=X, y=Y) %>% 
+          # Eliminate dupicates
+          unique %>% 
+          # Package alphahull
+          alphahull::ashape(alpha=alpha) ->
+          AlphaShape
+        # Convert alpha shape into polygon (https://rpubs.com/geospacedman/alphasimple)
+        # Make a graph with edges, library igraph
+        AlphaShape_graph <- igraph::graph.edgelist(cbind(as.character(AlphaShape$edges[, "ind1"]), 
+                                                         as.character(AlphaShape$edges[, "ind2"])), directed = FALSE)
+        # Tests: the graph must be connected and circular. If it is not, increase alpha.
+        Error <- ""
+        if (AlphaShape$length == 0) {
+          Error <- "No edges in alpha shape"
+        } else if (!igraph::is.connected(AlphaShape_graph)) {
+          Error <- "Graph not connected"
+        } else if (any(igraph::degree(AlphaShape_graph) != 2)) {
+          Error <- "Graph not circular"
+        } else if (igraph::clusters(AlphaShape_graph)$no > 1) {
+          Error <- "Graph composed of more than one circle"
+        }
+        if (Error == "") {
+          is_validated_alpha <- TRUE
+        } else {
+          if (alpha > 1E8) # Unable to make a circular graph: give up.
+            stop(paste(Error, address))
+          else # Try to doule alpha
+            alpha <- 2*alpha
+        }
+      }
+      
+      # Eliminate the first node to destroy circularity
+      Cut_graph <- AlphaShape_graph - igraph::E(AlphaShape_graph)[1]
+      # Find chain end points
+      ends <- names(which(igraph::degree(Cut_graph) == 1))
+      path <- igraph::get.shortest.paths(Cut_graph, ends[1], ends[2])[[1]]
+      # This is an index into the points
+      pathX <- as.numeric(igraph::V(Cut_graph)[unlist(path)]$name)
+      # Join the ends to restore circularity
+      pathX = c(pathX, pathX[1])
+      
+      # Get the points from the ashape object, make an owin. Manage reverse by tryCatch
+      Window <- tryCatch(spatstat::owin(poly=list(x=AlphaShape$x[pathX, ][, 1],y=AlphaShape$x[pathX, ][, 2])),
+                         error=function(e) # Error if the polygon is traversed clockwise
+                           spatstat::owin(poly=list(x=AlphaShape$x[rev(pathX), ][, 1],y=AlphaShape$x[rev(pathX), ][, 2])))
+    }
+    
+    # Create the point set
+    Points %>% 
+      dbmss::wmppp(window = Window, unitname = c("meter", "meters"))
+  }, error = function(e) {
+    # Something went wrong: return NA and print the address for future corrections.
+    print(paste(e, address))
+    return(NA)
+  })
+  
+}
+
+# convert spatstat objects to sp classes (A. Baddeley, https://stat.ethz.ch/pipermail/r-sig-geo/2009-May/005781.html)
+# owin -> polygon(s)
+owin2Polygons <- function(x, id="1") {
+  stopifnot(spatstat::is.owin(x))
+  x <- spatstat::as.polygonal(x)
+  closering <- function(df) { df[c(seq(nrow(df)), 1), ] }
+  pieces <- lapply(x$bdry,
+                   function(p) {
+                     Polygon(coords=closering(cbind(p$x,p$y)),
+                             hole=spatstat.utils::is.hole.xypolygon(p))  })
+  z <- Polygons(pieces, id)
+  return(z)
+}
+
+# owin -> SpatialPolygons
+owin2SP <- function(x) {
+  stopifnot(spatstat::is.owin(x))
+  y <- owin2Polygons(x)
+  z <- SpatialPolygons(list(y))
+  return(z)
+}
+
+# Adresse -> Polygon
+adress2Polygon <- function(address) {
+  ppp <- wmppp_adresse(address)
+  if (any(is.na(ppp)))
+    return(NA)
+  else
+    return(owin2Polygons(ppp$window, id=address))
+}
+
+# Make a Polygon from each address
+polygons <- lapply(sort(Diversite$adresse), adress2Polygon)
+# Won't work for 1 or 2 points. Eliminate NA's
+polygons <- polygons[!is.na(polygons)]
+# Make a SpatialPolygons object with the list of polygons
+ParisTrees_sp <- SpatialPolygons(polygons)
+proj4string(ParisTrees_sp) <- "+init=epsg:2154"
+# Plot it
+plot(ParisTrees_sp)
+
+# Merge it with diversity
+PolygonList <- sapply(ParisTrees_sp@polygons, function(x) x@ID)
+Diversite_df <- as.data.frame(Diversite[Diversite$adresse %in% PolygonList, ])
+row.names(Diversite_df) <- Diversite$adresse
+ParisTrees_spdf <- SpatialPolygonsDataFrame (ParisTrees_sp, Diversite_df)
+sp_arrondissements <- list("sp.polygons", arrondissements_Lambert93, col="green")
+spplot(ParisTrees_spdf[ParisTrees_spdf@data$domanialite == "Public garden" | ParisTrees_spdf@data$domanialite == "Cemetery", ], zcol="Richness", col = NA, sp.layout = sp_arrondissements)
+```
+
+# Diversité spatialement explicite
 
 ## Dans les parcs
 
@@ -253,7 +385,7 @@ Diversite %>%
 Le Parc des Buttes Chaumont contient énormément d'espèces mais beaucoup d'espèces rares.
 
 ```{r}
-Buttes_Chaumont <- wmppp_adresse("PARC DES BUTTES CHAUMONT", reverse = TRUE)
+Buttes_Chaumont <- wmppp_adresse("PARC DES BUTTES CHAUMONT 19 Public garden")
 plot(Buttes_Chaumont, which.marks="PointWeight")
 autoplot(as.AbdVector(Buttes_Chaumont), Distribution = "lnorm")
 Buttes_Chaumont_accum <- Mixing(Buttes_Chaumont, q.seq=c(0,2), Individual=TRUE)
@@ -276,7 +408,7 @@ plot(Montceau, which.marks="PointWeight", col = "red", add=TRUE)
 ```
 
 ```{r}
-Cygnes <- wmppp_adresse("ALLEE DES CYGNES", reverse = TRUE)
+Cygnes <- wmppp_adresse("ALLEE DES CYGNES")
 plot(Cygnes, which.marks="PointWeight")
 autoplot(as.AbdVector(Cygnes), Distribution = "lnorm")
 Cygnes_accum <- Mixing(Cygnes, q.seq=c(0,2), Individual=TRUE)
@@ -287,3 +419,25 @@ plot(Cygnes, which.marks="PointWeight", col = "red", add=TRUE)
 ```
 
 
+# Présentation
+
+## Méthodes discrètes
+
+Diversité <-> spécialisation
+HCDT (Theil et Herfindhal)
+Diversité des arrondissements de Paris
+Diversité de Paris = MAUP
+Diversité absolue / relative
+
+Application = les rues de Paris
+alpha
+beta par arrondissement
+par arrondissement
+Paris entier
+
+Concentration spatiale <-> ubiquité
+Ubiquité des principales espèces
+
+Conclusion
+Transfert entre disciplines
+Perspectives : en continu. Diversité spatialement explicite
