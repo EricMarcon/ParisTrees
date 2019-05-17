@@ -1,5 +1,5 @@
 ---
-title: "Trees in Paris"
+title: "Urban biodiversity: a study on Parisian trees"
 author: "Eric Marcon & Florence Puech"
 date: "`r format(Sys.time(), '%d %B %Y')`"
 preamble: >
@@ -8,7 +8,7 @@ preamble: >
 bibliography: entropie.bib
 output:
   ioslides_presentation:
-    logo: images/EcoFoG2017.png
+    logo: images/SEW2019.png
     widescreen: true
   beamer_presentation:
     df_print: kable
