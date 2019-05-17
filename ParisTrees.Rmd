@@ -68,9 +68,13 @@ options(tibble.print_min = 5, tibble.width = 50)
 
 Recent developments in biodiversity measurement.
 
-Possible interfertilisation with measures of specialisation and spatial concentration in economics.
+Possible interfertilisation with measures of specialisation and spatial concentration in economics [@Marcon2019].
 
-Applied to Paris trees data.
+Applied to Paris trees data:
+
+- Explore the biodiversity of trees,
+
+- Understand methods.
 
 
 ## Aims
@@ -79,9 +83,9 @@ Show similar approaches in different disciplines.
 
 Discuss economic issues:
 
-- MAUP
+- MAUP,
 
-- absolute vs. relative concentration
+- absolute vs. relative concentration.
 
 Illustrate with trees rather than shops or plants.
 
@@ -90,7 +94,7 @@ Illustrate with trees rather than shops or plants.
 
 Paris open data: https://opendata.paris.fr
 
-Dataset: 200,000 trees in Paris located in 20 arrondissements (areas), excluding Bois de Vincenne and Bois de Boulogne.
+Dataset: 200,000 trees in Paris located in 20 arrondissements, excluding Bois de Vincenne and Bois de Boulogne.
 
 Missing data: Jardin du Luxembourg, owned by Senate and a few others.
 
@@ -134,7 +138,7 @@ Organised in sets:
 
 - Schools, Nurseries, Sports facilities.
 
-```{r, tidy=FALSE}
+```{r, message=FALSE}
 # Prepare the dataset
 les_arbres@data %>%
   # Add coordinates in the dataset to calculate distances
@@ -160,107 +164,9 @@ les_arbres@data %>%
   # Makes addresses unique when a streets covers several arrondissements or an addressed is the same for a street and a square
   mutate(adresse = paste(adresse, arrondissement, domanialite)) ->
   les_arbres_df
-```
 
-Reproducible research: code and data available.
-
-
-# Measures of diversity
-
-
-## Aims
-
-We want to measure the diversity of trees in Paris areas.
-
-- Equivalent in economics: measure the specialisation of Paris areas
-
-Information theory is appropriate.
-
-
-## Measuring Uncertainty
-
-An experiment with several outcomes $\{r_1, \dots, r_s, \dots, r_S \}$:
-
-- The probability to obtain $r_s$ is $p_s$.
-
-Information function: $I(p_s)>0, p_s\in [0, 1[$, decreasing to $I(1)=0$.
-
-- Definition: rarity is $1/p_s$.
-
-- The logarithm of rarity is Shannon's information function.
-
-The expectation of the information carried by an individual is Shannon's entropy:
-$$\sum_s{p_s \ln {\frac{1}{p_s}}}$$
-
-## Theil's index
-
-Theil's  index  of specialisation is 
-$$\ln{S} - \sum_s{p_s \ln {\frac{1}{p_s}}}$$
-
-Specialisation is opposed to diversity.
-
-
-## Generalized Entropy
-
-Parametric entropy [@Tsallis1988;@Brulhart2005]
-
-Deformed logarithm: $\ln_q x = \frac{x^{1-q} -1}{1-q}$
-
-```{r lnq}
-library("entropart")
-curve(log(1/x), 0, 1, lty=1, lwd=2, ylab = expression(ln[q](1/x)))
-curve(lnq(1/x, 0), 0, 1, lwd=2, lty = 2, add = TRUE)
-curve(lnq(1/x, 2), 0, 1, lwd=2, lty = 3, add = TRUE)
-legend("topright", 
-      legend = c(expression(ln[0](1/x)), "ln(1/x)",
-      expression(ln[2](1/x))),
-      lty = c(2, 1, 3, 4), inset=  0.02)
-```
-
-
-## Formalism
-
-Tsallis entropy is the average (deformed, of order $q$) logarithm of rarity.
-
-The order $q$ stresses small or high probabilities.
-
-- Entropy of order 0: the number of possible outcomes (-1)
-
-- Entropy of order 1: Shannon ($\ln{S}-$ Theil)
-
-- Entropy of order 2: Simpson (1-Herfindahl).
-
-
-## Hill Numbers
-
-The number of equiprobable outcomes that have the same entropy as the observed system [@Hill1973].
-
-Exponential of entropy.
-
-Diversity profile:
-
-```{r}
 library("SpatDiv")
-q.seq <- seq(0, 2, .1)
-Arrondissements <- c(8,11,16)
-ADiv <- matrix(0, nrow = length(q.seq), ncol=length(Arrondissements))
-for(i in 1:length(Arrondissements)) {
-  les_arbres_df %>% dplyr::filter(arrondissement == Arrondissements[i]) %>% pull(spName) %>% as.AbdVector -> Abundance
-  ADiv[, i] <- CommunityProfile(Diversity, Abundance, q.seq, Correction = "None")$y
-}
-data.frame(q=q.seq, ADiv) %>% 
-  reshape::melt(id="q") %>%  
-  ggplot + 
-  geom_line(aes(x = q, y = value, colour = variable)) + 
-  scale_colour_discrete(name = "Arrondissement", labels = c("8th", "11th", "16th"))
-```
-
-## Richness of green spaces
-
-Diversity by type of green space: richness
-
-
-```{r}
+# Summarize diversity
 les_arbres_df %>% 
   group_by(domanialite, arrondissement, adresse) %>% 
   summarise(NumberOfTrees = n(),
@@ -269,139 +175,14 @@ les_arbres_df %>%
             Simpson = Diversity(spName, q=2, Correction="None")) %>% 
   arrange(desc(Richness)) ->
   Diversite
-
-Diversite %>% 
-  ggplot(aes(x=domanialite, y=Richness)) + 
-  geom_boxplot() +
-  scale_y_continuous(trans = "log10") +
-  labs(x="Type of green space", y="Richness")
 ```
 
-## Simpson's diversity of green spaces
-
-Diversity by type of green space: Simpson/Herfindahl
+Reproducible research: code and data available on https://github.com/EricMarcon/ParisTrees.
 
 
-```{r}
-Diversite %>% 
-  ggplot(aes(x=domanialite, y=Simpson)) + 
-  geom_boxplot() +
-  scale_y_continuous(trans = "log10") +
-  labs(x="Type of green space", y="Simpson's Diversity")
-```
+## Map
 
-## Richness of arrondissements
-
-Diversity by arrondissement: richness
-
-```{r}
-les_arbres_df %>% 
-  group_by(arrondissement) %>% 
-  summarise(Number = n(), 
-            Richness = Richness(spName, Correction="None"),
-            Shannon = Diversity(spName, q=1, Correction="None"),
-            Simpson = Diversity(spName, q=2, Correction="None")) %>% 
-  arrange(desc(Richness)) ->
-  DiversiteArrdt
-
-merge(arrondissements_Lambert93, DiversiteArrdt, by.x="L_CAB", by.y="arrondissement") %>% 
-  spplot(zcol="Richness")
-```
-
-## Shannon's Diversity of arrondissements
-
-Diversity by arrondissement: Shannon
-
-```{r}
-merge(arrondissements_Lambert93, DiversiteArrdt, by.x="L_CAB", by.y="arrondissement") %>% 
-  spplot(zcol="Shannon")
-```
-
-
-## Simpson's Diversity of arrondissements
-
-Diversity by arrondissement: Simpson
-
-```{r}
-merge(arrondissements_Lambert93, DiversiteArrdt, by.x="L_CAB", by.y="arrondissement") %>% 
-  spplot(zcol="Simpson")
-```
-
-
-
-# Measures of spatial concentration
-
-## Similar approach
-
-We want to measure the spatial ubiquity of species.
-
-Consider a species.
-
-The event $r_i$ is "A tree of arrondissement $i$ belongs to the species" has probability $p_i$.
-
-Ubiquity is the effective number of arrondissements the species is present in.
-
-Concentration is opposed to ubiquity.
-
-
-## Most abundant species
-
-Most abundant species are plane tree, horse chestnut, scholar tree, lime tree, Norway maple, sycamore maple, European nettle tree.
-
-```{r, warning=FALSE}
-les_arbres_df %>% 
-  group_by(spName) %>% 
-  summarise(Number=n()) %>% 
-  arrange(desc(Number))  -> AbdFreqCount
-AbdFreqCount %>% 
-  knitr::kable(caption="Most abundant species", longtable = TRUE, booktabs = TRUE, col.names=c("Species", "Number of Trees")) %>%
-  kableExtra::kable_styling(bootstrap_options = "striped", full_width = FALSE)
-```
-
-## Spatial ubiquity of abundant species
-
-```{r}
-les_arbres_df %>% 
-  group_by(spName) %>% 
-  summarise(Number = n(), 
-            Richness = Richness(arrondissement, Correction="None"),
-            Shannon = Diversity(arrondissement, q=1, Correction="None"),
-            Simpson = Diversity(arrondissement, q=2, Correction="None")) %>% 
-  arrange(desc(Number)) ->
-  Ubiquity
-
-
-```
-Spatial ubiquity of abundant species
-
-```{r}
-q.seq <- seq(0, 2, .1)
-Species <- c("Platanus x hispanica", "Aesculus hippocastanum", "Sophora japonica", "Platanus occidentalis")
-SpDiv <- matrix(0, nrow = length(q.seq), ncol=length(Species))
-for(i in 1:length(Species)) {
-  les_arbres_df %>% dplyr::filter(spName == Species[i]) %>% pull(arrondissement) %>% as.AbdVector -> Abundance
-  SpDiv[, i] <- CommunityProfile(Diversity, Abundance, q.seq, Correction = "None")$y
-}
-data.frame(q=q.seq, SpDiv) %>% 
-  reshape::melt(id="q") %>%  
-  ggplot + 
-  geom_line(aes(x = q, y = value, colour = variable)) + 
-  scale_colour_discrete(name = "Species", labels = Species)
-```
-
-# Relative vs Absolute
-
-## Motivation
-
-Clarify the links between relative and absolute diversity/ubiquity.
-
-Deal with the MAUP.
-
-## Illustration
-
-The diversity of parks and gardens: richness.
-
-```{r, tidy=FALSE, message=FALSE}
+```{r, message=FALSE, warning=FALSE}
 # Extraction of a wmppp from an address
 wmppp_adresse <- function(address, alpha=100) {
   tryCatch({
@@ -521,12 +302,228 @@ polygons <- polygons[!is.na(polygons)]
 ParisTrees_sp <- SpatialPolygons(polygons)
 proj4string(ParisTrees_sp) <- "+init=epsg:2154"
 # Plot it
+par(mar=rep(0,4))
 plot(ParisTrees_sp)
+```
 
-# Merge it with diversity
+# Measures of diversity
+
+
+## Aims
+
+We want to measure the diversity of trees in Paris arrondissements
+
+Equivalent in economics: measure the specialisation of Paris arrondissements.
+
+Information theory is appropriate.
+
+
+## Measuring Uncertainty
+
+An experiment with several outcomes $\{r_1, \dots, r_s, \dots, r_S \}$:
+
+- The probability to obtain $r_s$ is $p_s$.
+
+Information function: $I(p_s)>0, p_s\in [0, 1[$, decreasing to $I(1)=0$.
+
+- Definition: rarity is $1/p_s$.
+
+- The logarithm of rarity is Shannon's information function.
+
+The expectation of the information carried by an individual is Shannon's entropy:
+$$\sum_s{p_s \ln {\frac{1}{p_s}}}$$
+
+## Theil's index
+
+Theil's  index  of specialisation is 
+$$\ln{S} - \sum_s{p_s \ln {\frac{1}{p_s}}}$$
+
+Specialisation is opposed to diversity.
+
+
+## Generalized Entropy
+
+Parametric entropy [@Tsallis1988;@Brulhart2005]
+
+Deformed logarithm: $\ln_q x = \frac{x^{1-q} -1}{1-q}$
+
+```{r lnq}
+library("entropart")
+curve(log(1/x), 0, 1, lty=1, lwd=2, ylab = expression(ln[q](1/x)))
+curve(lnq(1/x, 0), 0, 1, lwd=2, lty = 2, add = TRUE)
+curve(lnq(1/x, 2), 0, 1, lwd=2, lty = 3, add = TRUE)
+legend("topright", 
+      legend = c(expression(ln[0](1/x)), "ln(1/x)",
+      expression(ln[2](1/x))),
+      lty = c(2, 1, 3, 4), inset=  0.02)
+```
+
+
+## Formalism
+
+Tsallis entropy is the average (deformed, of order $q$) logarithm of rarity.
+
+The order $q$ stresses small or high probabilities.
+
+- Entropy of order 0: the number of possible outcomes (-1)
+
+- Entropy of order 1: Shannon ($\ln{S}-$ Theil)
+
+- Entropy of order 2: Simpson (1-Herfindahl).
+
+
+## Hill Numbers
+
+The number of equiprobable outcomes that have the same entropy as the observed system [@Hill1973].
+Exponential of entropy [@Marcon2014a].
+
+```{r}
+q.seq <- seq(0, 2, .1)
+Arrondissements <- c(8,11,16)
+ADiv <- matrix(0, nrow = length(q.seq), ncol=length(Arrondissements))
+for(i in 1:length(Arrondissements)) {
+  les_arbres_df %>% dplyr::filter(arrondissement == Arrondissements[i]) %>% pull(spName) %>% as.AbdVector -> Abundance
+  ADiv[, i] <- CommunityProfile(Diversity, Abundance, q.seq, Correction = "None")$y
+}
+data.frame(q=q.seq, ADiv) %>% 
+  reshape::melt(id="q") %>%  
+  ggplot + 
+  geom_line(aes(x = q, y = value, colour = variable)) + 
+  scale_colour_discrete(name = "Arrondissement", labels = c("8th", "11th", "16th"))
+```
+
+
+## Richness of green spaces
+
+```{r}
+Diversite %>% 
+  ggplot(aes(x=domanialite, y=Richness)) + 
+  geom_boxplot() +
+  scale_y_continuous(trans = "log10") +
+  labs(x="Type of green space", y="Richness")
+```
+
+
+## Simpson's diversity of green spaces
+
+```{r}
+Diversite %>% 
+  ggplot(aes(x=domanialite, y=Simpson)) + 
+  geom_boxplot() +
+  scale_y_continuous(trans = "log10") +
+  labs(x="Type of green space", y="Simpson's Diversity")
+```
+
+
+## Richness of arrondissements
+
+```{r}
+les_arbres_df %>% 
+  group_by(arrondissement) %>% 
+  summarise(Number = n(), 
+            Richness = Richness(spName, Correction="None"),
+            Shannon = Diversity(spName, q=1, Correction="None"),
+            Simpson = Diversity(spName, q=2, Correction="None")) %>% 
+  arrange(desc(Richness)) ->
+  DiversiteArrdt
+
+merge(arrondissements_Lambert93, DiversiteArrdt, by.x="L_CAB", by.y="arrondissement") %>% 
+  spplot(zcol="Richness")
+```
+
+
+## Shannon's Diversity of arrondissements
+
+```{r}
+merge(arrondissements_Lambert93, DiversiteArrdt, by.x="L_CAB", by.y="arrondissement") %>% 
+  spplot(zcol="Shannon")
+```
+
+
+## Simpson's Diversity of arrondissements
+
+```{r}
+merge(arrondissements_Lambert93, DiversiteArrdt, by.x="L_CAB", by.y="arrondissement") %>% 
+  spplot(zcol="Simpson")
+```
+
+
+
+# Measures of spatial concentration
+
+## Similar approach
+
+We want to measure the spatial ubiquity of species.
+
+Consider a species.
+
+The event $r_i$ 
+
+"A tree of arrondissement $i$ belongs to the species" 
+
+has probability $p_i$.
+
+Ubiquity is the effective number of arrondissements the species is present in.
+
+Concentration is opposed to ubiquity.
+
+
+## Most abundant species
+
+Plane tree, horse chestnut, scholar tree, lime tree, Norway maple, sycamore maple...
+
+```{r, warning=FALSE}
+les_arbres_df %>% 
+  group_by(spName) %>% 
+  summarise(Number=n()) %>% 
+  arrange(desc(Number))  -> AbdFreqCount
+AbdFreqCount[1:6, ] %>% 
+  knitr::kable(caption="", longtable = FALSE, booktabs = TRUE, col.names=c("Species", "Number of Trees")) %>%
+  kableExtra::kable_styling(bootstrap_options = "striped", full_width = FALSE)
+```
+
+
+## Spatial ubiquity of abundant species
+
+```{r}
+les_arbres_df %>% 
+  group_by(spName) %>% 
+  summarise(Number = n(), 
+            Richness = Richness(arrondissement, Correction="None"),
+            Shannon = Diversity(arrondissement, q=1, Correction="None"),
+            Simpson = Diversity(arrondissement, q=2, Correction="None")) %>% 
+  arrange(desc(Number)) ->
+  Ubiquity
+
+q.seq <- seq(0, 2, .1)
+Species <- c("Platanus x hispanica", "Aesculus hippocastanum", "Sophora japonica", "Platanus occidentalis")
+SpDiv <- matrix(0, nrow = length(q.seq), ncol=length(Species))
+for(i in 1:length(Species)) {
+  les_arbres_df %>% dplyr::filter(spName == Species[i]) %>% pull(arrondissement) %>% as.AbdVector -> Abundance
+  SpDiv[, i] <- CommunityProfile(Diversity, Abundance, q.seq, Correction = "None")$y
+}
+data.frame(q=q.seq, SpDiv) %>% 
+  reshape::melt(id="q") %>%  
+  ggplot + 
+  geom_line(aes(x = q, y = value, colour = variable)) + 
+  scale_colour_discrete(name = "Species", labels = Species)
+```
+
+# Relative vs Absolute
+
+## Motivation
+
+Clarify the links between relative and absolute diversity/ubiquity.
+
+Deal with the MAUP.
+
+## The richness of parks and gardens
+
+```{r, tidy=FALSE, message=FALSE}
+# Merge polygons with diversity
 PolygonList <- sapply(ParisTrees_sp@polygons, function(x) x@ID)
 Diversite_df <- as.data.frame(Diversite[Diversite$adresse %in% PolygonList, ])
-row.names(Diversite_df) <- Diversite$adresse
+row.names(Diversite_df) <- Diversite_df$adresse
 ParisTrees_spdf <- SpatialPolygonsDataFrame (ParisTrees_sp, Diversite_df)
 sp_arrondissements <- list("sp.polygons", arrondissements_Lambert93, col="green")
 spplot(ParisTrees_spdf[ParisTrees_spdf@data$domanialite == "Public garden" | ParisTrees_spdf@data$domanialite == "Cemetery", ], zcol="Richness", col = NA, sp.layout = sp_arrondissements)
@@ -545,14 +542,17 @@ Absolute or relative diversity $\leftrightarrow$ $\alpha$ or $\beta$ diversity.
 
 ## Decomposition
 
-Entropy(arrondissement) = entropy(within parks) + entropy(between parks)
+Rules:
 
+- Entropy(arrondissement) = entropy(within parks) + entropy(between parks)
 
-Diversity(arrondissement) = Diversity(within parks) X Diversity(between parks)
+- Diversity(arrondissement) = Diversity(within parks) X Diversity(between parks)
 
-and 
+- Dimensions of diversity: \# Species = \# Species/park X \# Parks
 
-Spatial concentration(all trees) = concentration(within species) X concentration(between species)
+and:
+
+- Spatial concentration(all trees) = concentration(within species) X concentration(between species)
 
 
 ## Within diversity of public gardens
@@ -569,7 +569,7 @@ les_arbres_df %>% dplyr::filter(domanialite == "Public garden") %>%
   summarise(NumberOfGardens = n(), 
             alphaRichness = expq(weighted.mean(Entropy0, NumberofTrees),q=0),
             alphaShannon = expq(weighted.mean(Entropy1, NumberofTrees),q=1),
-            alphaSimpson = expq(weighted.mean(Entropy2, NumberofTrees),q=2),) ->
+            alphaSimpson = expq(weighted.mean(Entropy2, NumberofTrees),q=2)) ->
   PGDiversite
 # Plot
 merge(arrondissements_Lambert93, PGDiversite, by.x="L_CAB", by.y="arrondissement") %>% 
@@ -580,64 +580,85 @@ merge(arrondissements_Lambert93, PGDiversite, by.x="L_CAB", by.y="arrondissement
 ## Between diversity of public gardens
 
 ```{r}
+# Gamma
+les_arbres_df %>% dplyr::filter(domanialite == "Public garden") %>% 
+  group_by(arrondissement) %>% 
+  summarise(NumberOfTrees = n(), 
+            gammaRichness = Richness(spName, Correction="None"),
+            gammaShannon = Diversity(spName, q=1, Correction="None"),
+            gammaSimpson = Diversity(spName, q=2, Correction="None")) %>% 
+  merge(PGDiversite) %>%
+  mutate(betaRichness = gammaRichness / alphaRichness,
+         betaShannon = gammaShannon / alphaShannon,
+         betaSimpson = gammaSimpson / alphaSimpson) ->
+  PGDiversite
+
+# Plot
+merge(arrondissements_Lambert93, PGDiversite, by.x="L_CAB", by.y="arrondissement") %>% 
+  spplot(zcol="betaRichness")
+```
+
+
+## Total diversity of public gardens
+
+```{r}
 # Plot
 merge(arrondissements_Lambert93, PGDiversite, by.x="L_CAB", by.y="arrondissement") %>% 
   spplot(zcol="gammaRichness")
 ```
 
 
-## Gamma diversity of public gardens
-
-```{r}
-# Plot
-merge(arrondissements_Lambert93, PGDiversite, by.x="L_CAB", by.y="arrondissement") %>% 
-  spplot(zcol="betaRichness")
-```
-
 ## MAUP
 
-Diversity/Ubiquity increases when data are aggregated: Scale effect of the MAUP.
+Diversity/Ubiquity increases when data are aggregated: 
 
-Actually increases by between diversity : not a problem but a feature.
+- Scale effect of the MAUP.
 
-# Conclusions
+- Actually increases by between diversity : not a problem but a feature.
+
+
+
+# Conclusion
 
 ## Key messages
 
-Diversity $\leftrightarrow$ Specialisation
+Diversity $\leftrightarrow$ Specialisation.
 
-Ubiquity $\leftrightarrow$ Spatial concentration
+Ubiquity $\leftrightarrow$ Spatial concentration.
 
 Hill numbers unify many metrics.
 
-Key importance of the order of diversity/ubitquity: Theil$\leftrightarrow q=1$; Ellison and Glaeser$\leftrightarrow q=2$.
+Key importance of the order of diversity/ubiquity: Theil$\leftrightarrow q=1$; Ellison and Glaeser$\leftrightarrow q=2$.
 
-Partition rather complain of the MAUP.
+Partitioning solves the scale effect of the MAUP.
+
 
 ## Perspectives
 
 Continuous space:
 
-- Spatial concentration metrics
+- Spatial concentration metrics are available [@Marcon2012c],
 
 - Spatially explicit diversity metrics to develop.
 
-```{r}
+```{r, message=FALSE}
 Buttes_Chaumont <- wmppp_adresse("PARC DES BUTTES CHAUMONT 19 Public garden")
-plot(Buttes_Chaumont, which.marks="PointWeight")
+plot(Buttes_Chaumont, which.marks="PointWeight", main="Parc des Buttes Chaumont")
 ```
+
 
 ## Spatially explicit diversity
 
 Calculate the average diversity around a typical point.
 
-```{r}
-Buttes_Chaumont_accum <- Mixing(Buttes_Chaumont, q.seq=c(0,2), Individual=TRUE)
-MapPlot(Buttes_Chaumont_accum, Order=0, NeighborHood=10)
+```{r, message=FALSE}
+Buttes_Chaumont_accum <- DivAccum(Buttes_Chaumont, q.seq=c(0,2), r.seq=c(0,30), Individual=TRUE)
+par(mar=rep(0,4))
+capture.output(MapPlot(Buttes_Chaumont_accum, Order=0, NeighborHood=30)) -> silence
 ```
 
 
-## References
+## References {.smaller}
 
 \tiny
 
