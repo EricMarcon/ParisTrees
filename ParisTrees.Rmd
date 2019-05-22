@@ -88,13 +88,15 @@ Discuss economic issues:
 Illustrate with trees for SEW 2019.
 
 
-## Data
+## Data {.columns-2} 
+
+\begincols
+  \begincol{.48\textwidth}
+
 
 Paris open data: https://opendata.paris.fr
 
-Dataset: 200,000 trees in Paris located in 20 arrondissements, excluding Bois de Vincennes and Bois de Boulogne.
-
-Missing data: Jardin du Luxembourg, owned by Senate and a few others.
+Dataset: 200,000 trees in Paris located in 20 arrondissements.
 
 
 ```{r data, include=FALSE}
@@ -127,8 +129,6 @@ arrondissements %>%
   spTransform(CRS("+init=epsg:2154")) ->
   arrondissements_Lambert93
 ```
-
-Organised in sets:
 
 - Streets, Beltway,
 
@@ -175,12 +175,12 @@ les_arbres_df %>%
   Diversite
 ```
 
-Reproducible research: code and data available on https://github.com/EricMarcon/ParisTrees.
+  <p class="forceBreak"></p>
+  \endcol
+  \begincol{.48\textwidth}
 
-
-## Map
-
-```{r, message=FALSE, warning=FALSE}
+  
+```{r, message=FALSE, warning=FALSE, out.width='120%', fig.align="left"}
 # Extraction of a wmppp from an address
 wmppp_adresse <- function(address, alpha=100) {
   tryCatch({
@@ -304,6 +304,14 @@ par(mar=rep(0,4))
 plot(ParisTrees_sp)
 ```
 
+Reproducible research: [on GitHub](https://github.com/EricMarcon/ParisTrees).
+
+Made with R, knitr, sp, [entropart](https://ericmarcon.github.io/entropart/).
+
+  \endcol
+\endcols
+
+
 ## Most abundant species
 
 Hybrid plane tree, horse chestnut, scholar tree, lime tree, Norway maple, sycamore maple...
@@ -409,7 +417,7 @@ data.frame(q=q.seq, ADiv) %>%
   reshape::melt(id="q") %>%  
   ggplot + 
   geom_line(aes(x = q, y = value, colour = variable)) + 
-  labs(x="Order of diversity q", y="Diversity")
+  labs(x="Order of diversity q", y="Diversity") +
   scale_colour_discrete(name = "Arrondissement", labels = c("8th", "11th", "16th"))
 ```
 
@@ -481,10 +489,10 @@ The event $r_i$ _A tree of arrondissement $i$ belongs to the species_ has probab
 
 Ubiquity is the effective number of arrondissements the species is present in.
 
-Concentration is opposed to ubiquity.
+Spatial concentration is opposed to ubiquity.
 
 
-## Spatial ubiquity of abundant species
+## Ubiquity of abundant species
 
 ```{r}
 les_arbres_df %>% 
@@ -518,6 +526,17 @@ Clarify the links between relative and absolute diversity/ubiquity.
 
 Deal with the MAUP.
 
+## Two types of diversity
+
+In search for biodiversity in public gardens:
+
+- Choose the arrondissement where public gardens are more diverse on average.
+
+- Choose the one where they are more different from each other.
+
+Absolute or relative diversity $\leftrightarrow$ $\alpha$ or $\beta$ diversity.
+
+
 ## The richness of parks and gardens
 
 ```{r, tidy=FALSE, message=FALSE}
@@ -529,16 +548,6 @@ ParisTrees_spdf <- SpatialPolygonsDataFrame (ParisTrees_sp, Diversite_df)
 sp_arrondissements <- list("sp.polygons", arrondissements_Lambert93, col="green")
 spplot(ParisTrees_spdf[ParisTrees_spdf@data$domanialite == "Public garden" | ParisTrees_spdf@data$domanialite == "Cemetery", ], zcol="Richness", col = NA, sp.layout = sp_arrondissements)
 ```
-
-## Two types of diversity
-
-In search for biodiversity in public gardens:
-
-- Choose the arrondissement where public gardens are more diverse on average.
-
-- Choose the one where they are more different from each other.
-
-Absolute or relative diversity $\leftrightarrow$ $\alpha$ or $\beta$ diversity.
 
 
 ## Decomposition
@@ -645,7 +654,11 @@ Ubiquity $\leftrightarrow$ Spatial concentration.
 
 Hill numbers unify many metrics.
 
-Key importance of the order of diversity/ubiquity: Theil$\leftrightarrow q=1$; Ellison and Glaeser$\leftrightarrow q=2$.
+Key importance of the order of diversity/ubiquity:
+
+- Theil$\leftrightarrow q=1$; 
+
+- Ellison and Glaeser$\leftrightarrow q=2$.
 
 Partitioning solves the scale effect of the MAUP.
 

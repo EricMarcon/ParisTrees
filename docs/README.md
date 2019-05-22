@@ -1,9 +1,7 @@
-# Diversité des arbres de Paris
+# Urban biodiversity: a study on Parisian trees
 
 ![stability-wip](https://img.shields.io/badge/stability-work_in_progress-lightgrey.svg)
 
-[Données](https://opendata.paris.fr/explore/dataset/les-arbres/)
+[Data](https://opendata.paris.fr/explore/dataset/les-arbres/)
 
-[Résultats préliminaires](https://EricMarcon.github.io/ParisTrees/Exploration.html)
-
-[Présentation](https://EricMarcon.github.io/ParisTrees/ParisTrees.html)
+[Talk](https://EricMarcon.github.io/ParisTrees/ParisTrees.html) given at the [18th International Workshop on Spatial Econometrics and Statistics](https://workshop.inra.fr/sew2019/)
