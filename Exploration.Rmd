@@ -206,7 +206,6 @@ les_arbres_df %>%
 Les alignements sont très peu divers, à l'exception de l'Allée des Cygnes qui est un arboretum.
 
 ```{r, tidy=FALSE}
-Diversite[Diversite$adresse=="ALLEE DES CYGNES 15", ]$domanialite <- "Jardin"
 Diversite %>% 
   group_by(domanialite) %>% 
   summarise(Nombre = n(),
@@ -223,13 +222,13 @@ Diversite %>%
 Profils de diversité.
 
 ```{r}
-ADiv <- data.frame(q=q.seq)
+q.seq <- seq(from=0, to=2, by=.1)
 ADiv <- matrix(0, nrow = length(q.seq), ncol=20)
 for(i in 1:20) {
   les_arbres_df %>% dplyr::filter(arrondissement == i) %>% pull(spName) %>% as.AbdVector -> Abundance
   ADiv[, i] <- CommunityProfile(Diversity, Abundance, q.seq, Correcton = "None")$y
 }
-data.frame(q=q.seq, ADiv) %>% reshape::melt(id=q) %>%  
+data.frame(q=q.seq, ADiv) %>% reshape::melt(id="q") %>%  
   ggplot + geom_line(aes(x = q, y = value, colour = variable))
 ```
 
@@ -363,10 +362,10 @@ plot(ParisTrees_sp)
 # Merge it with diversity
 PolygonList <- sapply(ParisTrees_sp@polygons, function(x) x@ID)
 Diversite_df <- as.data.frame(Diversite[Diversite$adresse %in% PolygonList, ])
-row.names(Diversite_df) <- Diversite$adresse
+row.names(Diversite_df) <- Diversite_df$adresse
 ParisTrees_spdf <- SpatialPolygonsDataFrame (ParisTrees_sp, Diversite_df)
 sp_arrondissements <- list("sp.polygons", arrondissements_Lambert93, col="green")
-spplot(ParisTrees_spdf[ParisTrees_spdf@data$domanialite == "Public garden" | ParisTrees_spdf@data$domanialite == "Cemetery", ], zcol="Richness", col = NA, sp.layout = sp_arrondissements)
+spplot(ParisTrees_spdf[ParisTrees_spdf@data$domanialite == "Jardin" | ParisTrees_spdf@data$domanialite == "CIMETIERE", ], zcol="Richness", col = NA, sp.layout = sp_arrondissements)
 ```
 
 # Diversité spatialement explicite
@@ -385,7 +384,7 @@ Diversite %>%
 Le Parc des Buttes Chaumont contient énormément d'espèces mais beaucoup d'espèces rares.
 
 ```{r}
-Buttes_Chaumont <- wmppp_adresse("PARC DES BUTTES CHAUMONT 19 Public garden")
+Buttes_Chaumont <- wmppp_adresse("PARC DES BUTTES CHAUMONT 19 Jardin")
 plot(Buttes_Chaumont, which.marks="PointWeight")
 autoplot(as.AbdVector(Buttes_Chaumont), Distribution = "lnorm")
 Buttes_Chaumont_accum <- Mixing(Buttes_Chaumont, q.seq=c(0,2), Individual=TRUE)
@@ -397,7 +396,7 @@ MapPlot(Buttes_Chaumont_accum, Order=0, NeighborHood=10)
 Le Parc Montceau contient 20 espèces de plus mais est 5 fois plus divers à l'ordre 2.
 
 ```{r}
-Montceau <- wmppp_adresse("PARC MONCEAU")
+Montceau <- wmppp_adresse("PARC MONCEAU 8 Jardin")
 plot(Montceau, which.marks="PointWeight")
 autoplot(as.AbdVector(Montceau), Distribution = "lnorm")
 Montceau_accum <- Mixing(Montceau, q.seq=c(0,2), Individual=TRUE)
@@ -408,7 +407,7 @@ plot(Montceau, which.marks="PointWeight", col = "red", add=TRUE)
 ```
 
 ```{r}
-Cygnes <- wmppp_adresse("ALLEE DES CYGNES")
+Cygnes <- wmppp_adresse("ALLEE DES CYGNES 15 Alignement")
 plot(Cygnes, which.marks="PointWeight")
 autoplot(as.AbdVector(Cygnes), Distribution = "lnorm")
 Cygnes_accum <- Mixing(Cygnes, q.seq=c(0,2), Individual=TRUE)
@@ -441,3 +440,145 @@ Ubiquité des principales espèces
 Conclusion
 Transfert entre disciplines
 Perspectives : en continu. Diversité spatialement explicite
+
+
+# The Conversation
+
+```{r, echo=FALSE}
+# Set ggplotting to bw plot default, but with transparent background elements.  
+theme_set(theme_bw(base_size=12))
+theme_update(panel.background = element_rect(fill = "transparent", colour = NA),
+             plot.background = element_rect(fill = "transparent", colour = NA))
+knitr::opts_chunk$set(dev.args=list(bg="transparent"))
+```
+
+
+## Calcul de richesse et Simpson
+
+```{r}
+les_arbres_df %>% 
+  group_by(domanialite, arrondissement, adresse) %>% 
+  summarise(Nombre = n(), 
+            Richesse = Richness(spName, Correction="None"),
+            Simpson = Simpson(spName, Correction="None")) %>% 
+  arrange(desc(Richesse)) %>% 
+  # Recodage des variables pour les graphiques
+  mutate(type_espace=recode(domanialite, Alignement="Alignements", Jardin="Jardins", CIMETIERE="Cimetières", PERIPHERIQUE="Périphérique")) ->
+  Entropie
+```
+
+## Richesse par domanialité
+
+```{r, tidy=FALSE}
+Entropie %>% 
+  group_by(domanialite) %>% 
+  summarise(Nombre = n(),
+            Médiane = median(Richesse),
+            EcartType = sd(Richesse))
+Entropie %>% 
+  dplyr::filter(domanialite %in% c("Alignement", "CIMETIERE", "Jardin", "PERIPHERIQUE")) %>% 
+  ggplot(aes(x=type_espace, y=Richesse)) + 
+  geom_boxplot() +
+  scale_y_continuous(trans = "log10") +
+  xlab("Domanialité") 
+```
+## Simpson par domanialité
+
+```{r, tidy=FALSE}
+Entropie %>% 
+  group_by(domanialite) %>% 
+  summarise(Nombre = n(),
+            Médiane = median(Simpson),
+            EcartType = sd(Simpson))
+Entropie %>% 
+  dplyr::filter(domanialite %in% c("Alignement", "CIMETIERE", "Jardin", "PERIPHERIQUE")) %>% 
+  ggplot(aes(x=type_espace, y=Simpson)) + 
+  geom_boxplot() +
+  xlab("Domanialité") 
+```
+
+## Diversité alpha des parcs
+
+```{r}
+# Alpha
+les_arbres_df %>% dplyr::filter(domanialite == "Jardin") %>% 
+  group_by(arrondissement, adresse) %>% 
+  summarise(NumberofTrees = n(), 
+            Entropy0 = Tsallis(spName, q=0, Correction="None"),
+            Entropy1 = Tsallis(spName, q=1, Correction="None"),
+            Entropy2 = Tsallis(spName, q=2, Correction="None")) %>% 
+  group_by(arrondissement) %>% 
+  summarise(NumberOfGardens = n(), 
+            alphaRichness = expq(weighted.mean(Entropy0, NumberofTrees),q=0),
+            alphaShannon = expq(weighted.mean(Entropy1, NumberofTrees),q=1),
+            alphaSimpson = expq(weighted.mean(Entropy2, NumberofTrees),q=2)) ->
+  PGDiversite
+# Plot
+merge(arrondissements_Lambert93, PGDiversite, by.x="L_CAB", by.y="arrondissement") %>% 
+  spplot(zcol="alphaRichness")
+
+
+```
+
+## Diversité gamma des parcs
+
+```{r}
+# Gamma
+les_arbres_df %>% dplyr::filter(domanialite == "Jardin") %>% 
+  group_by(arrondissement) %>% 
+  summarise(NumberOfTrees = n(), 
+            gammaRichness = Richness(spName, Correction="None"),
+            gammaShannon = Diversity(spName, q=1, Correction="None"),
+            gammaSimpson = Diversity(spName, q=2, Correction="None")) %>% 
+  merge(PGDiversite) %>%
+  mutate(betaRichness = gammaRichness / alphaRichness,
+         betaShannon = gammaShannon / alphaShannon,
+         betaSimpson = gammaSimpson / alphaSimpson) ->
+  PGDiversite
+
+# Plot
+merge(arrondissements_Lambert93, PGDiversite, by.x="L_CAB", by.y="arrondissement") %>% 
+  spplot(zcol="betaRichness")
+```
+
+
+## Décomposition
+
+La richesse des parcs des 16ème et  20ème arrondissements:
+```{r}
+PGDiversite[PGDiversite$arrondissement %in% c("16", "20"), c("arrondissement", "alphaRichness", "betaRichness", "gammaRichness")]
+```
+
+Cette approche peut être illustrée en l'appliquant aux jardins publics. Dans le 16ème arrondissement, le nombre moyen d'espèces d'un jardin, arrondi à l'unité la pus proche, est 91 alors qu'il n'est que de 26 dans le 20ème. La richesse locale est donc presque quatre fois supérieure dans le 16ème. Mais le rapport est bien inférieur pour la richesse globale : 220 espèces au total dans le 20ème, 353 dans le 16ème, moins du double donc. Pourquoi ? Parce que les parcs sont bien plus hétérogènes dans le 20ème. Le ratio diversité gamma/diversité alpha (nombre total d'espèces sur nombre local moyen) est arrondi à 9 dans le 20ème contre 4 dans le 16ème.
+Tout bien considéré, les jardins du 16ème sont plus riches, mais plus monotones que ceux du 20ème.
+
+Cette mesure de la diversité beta est optimale parce qu'elle permet de simplfier la réalité sous la forme de deux nombres : la diversité des jardins du 16ème arrondissement de Paris est la même que celle d'un modèle simplifié composé de 4 jardins (précisément: 3,86) comprenant 91 espèces par jardin (précisément 91,37), toutes différentes, pour un total de 353 espèces (91,37 fois 3,86). Dans le 20ème arrondissements, nous avons l'équivalent de 8,57 jardins composés de 25,66 espèces par jardin, soient 220 espèces.
+
+## Données pour le texte
+
+Entropie de Simpson :
+```{r}
+les_arbres_df %>% 
+  group_by(arrondissement, adresse) %>% 
+  summarise(NumberofTrees = n(), 
+            Entropy0 = Tsallis(spName, q=0, Correction="None"),
+            Entropy1 = Tsallis(spName, q=1, Correction="None"),
+            Entropy2 = Tsallis(spName, q=2, Correction="None")) %>% 
+  group_by(arrondissement) %>% 
+  summarise(NumberOfGardens = n(), 
+            alphaRichness = weighted.mean(Entropy0, NumberofTrees),
+            alphaShannon = weighted.mean(Entropy1, NumberofTrees),
+            alphaSimpson = weighted.mean(Entropy2, NumberofTrees)) %>% 
+  dplyr::filter(arrondissement %in% c("8", "11", "16"))
+```
+
+Pour Paris entier:
+```{r}
+les_arbres_df %>% 
+  summarise(NumberofTrees = n(), 
+            Richness = Tsallis(spName, q=0, Correction="None"),
+            Shannon = Tsallis(spName, q=1, Correction="None"),
+            Simpson = Tsallis(spName, q=2, Correction="None"))
+```
+
+
